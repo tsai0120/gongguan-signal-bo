@@ -25,7 +25,7 @@ from simulator import BASELINE, BOUNDS, HOLDOUT, TRAIN, evaluate, generate_deman
 
 METHODS = ("Mean MOBO", "Robust MOBO", "Random")
 COLORS = {"Mean MOBO": "#1d69a5", "Robust MOBO": "#00846b", "Random": "#767480"}
-REF = torch.tensor([-150., -150.], dtype=torch.double)
+REF = torch.tensor([-150., -150., -150.], dtype=torch.double)
 GRID = torch.cartesian_prod(
     torch.linspace(0, 1, 41, dtype=torch.double),
     torch.linspace(0, 1, 41, dtype=torch.double),
@@ -39,7 +39,7 @@ def scale(unit_plan):
 def propose(points, scores, seed):
     x = torch.as_tensor(np.array(points), dtype=torch.double)
     y = torch.as_tensor(-np.array(scores), dtype=torch.double)
-    model = SingleTaskGP(x, y, outcome_transform=Standardize(m=2))
+    model = SingleTaskGP(x, y, outcome_transform=Standardize(m=y.shape[-1]))
     fit_gpytorch_mll(ExactMarginalLogLikelihood(model.likelihood, model))
     acquisition = qLogNoisyExpectedHypervolumeImprovement(
         model=model, ref_point=REF.tolist(), X_baseline=x,
@@ -72,16 +72,16 @@ def search(method, seed, budget, train):
         points.append(unit_plan)
         details.append(result)
         summary = result.mean(axis=0) if method == "Mean MOBO" else result.max(axis=0)
-        scores.append(summary[:2])
+        scores.append(summary)
         # Use the same robust metric to compare all searches.
-        robust_hv.append(hypervolume(np.max(details, axis=1)[:, :2]))
+        robust_hv.append(hypervolume(np.max(details, axis=1)))
     return scale(points), np.array(details), robust_hv
 
 
 def recommend(plans, details, method):
-    # Equal relative weighting against the two fixed reference limits.
+    # Equal relative weighting against the three fixed reference limits.
     summary = details.mean(axis=1) if method == "Mean MOBO" else details.max(axis=1)
-    return plans[np.argmin((summary[:, :2] / -REF.numpy()).sum(axis=1))]
+    return plans[np.argmin((summary / -REF.numpy()).sum(axis=1))]
 
 
 def write_csv(path, header, rows):
@@ -99,14 +99,16 @@ def plot(path, runs, recommendations, baseline, holdout):
         history.plot(steps, np.median(traces, axis=0), color=COLORS[method], label=method)
         history.fill_between(steps, traces.min(axis=0), traces.max(axis=0),
                              color=COLORS[method], alpha=0.12)
-    history.set(xlabel="Evaluated plans", ylabel="Robust hypervolume (s²)",
+    history.set(xlabel="Evaluated plans", ylabel="Robust hypervolume (s³)",
                 title="Search progress on training scenarios")
     history.legend(frameon=False, fontsize=8)
     plans, training, _ = runs["Robust MOBO"][0]
-    holdout_points = np.array([evaluate(plan, holdout).max(axis=0)[:2] for plan in plans])
-    mask = is_non_dominated(-torch.as_tensor(training.max(axis=1)[:, :2])).numpy()
-    frontier.scatter(*holdout_points.T, color="#c6d1d0", s=21, label="Robust MOBO trials")
-    frontier.scatter(*holdout_points[mask].T, facecolors="none", edgecolors=COLORS["Robust MOBO"],
+    holdout_points = np.array([evaluate(plan, holdout).max(axis=0) for plan in plans])
+    mask = is_non_dominated(-torch.as_tensor(training.max(axis=1))).numpy()
+    points = frontier.scatter(*holdout_points[:, :2].T, c=holdout_points[:, 2],
+                              cmap="plasma", s=25, label="Robust MOBO trials")
+    fig.colorbar(points, ax=frontier, label="Worst mean general traffic (s)")
+    frontier.scatter(*holdout_points[mask, :2].T, facecolors="none", edgecolors=COLORS["Robust MOBO"],
                      s=62, label="Training Pareto plans")
     markers = {"Mean MOBO": "^", "Robust MOBO": "D", "Random": "s"}
     for method, result in recommendations.items():
@@ -162,8 +164,17 @@ def main():
     metrics = ["mean_bus_delay_s", "pedestrian_p95_wait_s", "mean_general_vehicle_delay_s"]
     plan_columns = ["cycle_s", "main_green_share", "scenario", *metrics]
     write_csv(args.output / "trials.csv",
-              ["run", "method", "step", *plan_columns, "training_robust_hv_s2"], trials)
+              ["run", "method", "step", *plan_columns, "training_robust_hv_s3"], trials)
     write_csv(args.output / "holdout.csv", ["run", "method", *plan_columns], selected)
+    pareto = []
+    for seed, (plans, details, _) in enumerate(runs["Robust MOBO"]):
+        scores = details.max(axis=1)
+        mask = is_non_dominated(-torch.as_tensor(scores)).numpy()
+        selected_plan = recommend(plans, details, "Robust MOBO")
+        for plan, score in zip(plans[mask], scores[mask]):
+            pareto.append([seed, *plan, *score, bool(np.array_equal(plan, selected_plan))])
+    write_csv(args.output / "pareto.csv",
+              ["run", "cycle_s", "main_green_share", *metrics, "recommended"], pareto)
     plot(args.output / "results.png", runs, first_run, baseline, holdout)
 
 

@@ -1,27 +1,31 @@
-# Gongguan Signal BO｜公館路口號誌最佳化
+# 公館路口號誌最佳化
 
-公館圓環改造後的課堂原型。用 BoTorch 的 qLogNEHVI 搜尋兩個時制參數，展示縮短公車延誤和行人等待時的取捨，並比較平均情境與最壞情境兩種目標。
+[中文提案 PDF](report/Gongguan_BO_Proposal_ZH.pdf) · [英文提案 PDF](report/Gongguan_BO_Proposal_EN.pdf) · [原版中文提案 PDF](report/Gongguan_BO_Proposal.pdf)
 
-**Proposal:** [English PDF](report/Gongguan_BO_Proposal_EN.pdf) · [LaTeX source](report/Gongguan_BO_Proposal_EN.tex) · [原版中文 PDF](report/Gongguan_BO_Proposal.pdf)
+## 問題與目標
 
-## Why this intersection?
+我搭公車經過公館時，有時得等好幾輪紅燈才能左轉進基隆路。步行過街時，我覺得等待仍在可接受的範圍。這個 prototype 探討尖峰號誌能否縮短公車延誤，同時兼顧行人與一般車流。模擬使用整體公車排隊延誤，實際左轉動線仍待建模。
 
-On my trips through Gongguan, my bus sometimes had to wait through several red lights before turning left onto Keelung Road. When I crossed on foot, the wait felt acceptable. The proposal asks whether peak-period signal timing can cut bus delays while keeping pedestrian waits acceptable. The simulator treats the bus delay as an aggregate proxy and does not model the specific left-turn movement.
+我們用 BoTorch 的 qLogNEHVI 搜尋兩個參數：號誌週期（100–160 秒）和主幹道可分配綠燈比例（45–65%）。三個最佳化目標是公車平均延誤、行人等待 P95 和一般車平均延誤。平均情境 MOBO 對三種情境取平均，最壞情境 MOBO 對每項指標各取情境最大值。兩者都與隨機搜尋及固定合成時制比較。
 
-The prototype uses BoTorch's **qLogNEHVI** to search signal cycle length and main-axis green share. It compares optimizing the average across three synthetic demand scenarios with optimizing each objective's worst scenario. It also tracks general-traffic delay to see who bears the cost of a timing change.
+## 實驗結果
 
-![Search progress and held-out trade-offs for Gongguan signal timing](results/results.png)
+![三目標搜尋進度與保留情境的方案取捨](results/results.png)
 
-| Method | Mean bus delay (s) | Pedestrian P95 wait (s) | Mean general-traffic delay (s) |
+左圖比較三種搜尋方法的訓練穩健 hypervolume，線為四次重跑的中位數，陰影為最小至最大值。右圖以第 1 次搜尋的保留情境為例，橫軸與縱軸為公車延誤和行人等待，候選圓點的填色代表一般車延誤，空心圈為在訓練情境屬於三目標 Pareto front 的方案。
+
+| 方法 | 公車平均延誤（秒） | 行人等待 P95（秒） | 一般車平均延誤（秒） |
 | --- | ---: | ---: | ---: |
-| Fixed synthetic plan | 133.7 | 79.1 | 38.5 |
-| Average-scenario MOBO | 124.4 | 66.5 | 48.7 |
-| Worst-scenario MOBO | 112.7 | 70.4 | 72.5 |
-| Random search | 99.8 | 73.4 | 60.9 |
+| 固定合成時制 | 133.7 | 79.1 | 38.5 |
+| 平均情境 MOBO | 124.4 | 66.6 | 48.7 |
+| 最壞情境 MOBO | 124.4 | 66.8 | 48.8 |
+| 隨機搜尋 | 102.3 | 73.4 | 57.3 |
 
-Each cell reports the median across four runs of the metric's worst held-out scenario. Compared with the fixed synthetic plan, worst-scenario MOBO reduced bus and pedestrian delays but increased general-traffic delay. Random search gave the shortest bus delays among the selected plans and a higher pedestrian wait than worst-scenario MOBO. These are simulated results with synthetic demand.
+各指標先取最壞保留情境，再對四次搜尋取中位數。三欄都愈低愈好。
 
-## 重跑
+隨機搜尋的公車延誤最低，兩種 MOBO 的行人等待和一般車延誤都比隨機搜尋低。最壞情境 MOBO 的訓練 hypervolume 中位數比隨機搜尋高約 12%。固定合成時制的一般車延誤仍最低。兩種 MOBO 的保留情境結果相近。
+
+## 重跑與示範
 
 建議使用 Python 3.11。所有到達資料均由程式生成。
 
@@ -32,31 +36,21 @@ python -m pip install -r requirements.txt
 python experiment.py
 ```
 
-使用 `python experiment.py --budget 8 --runs 1 --output /tmp/gongguan-demo` 快速展示。完整實驗每個方法有 4 次搜尋，每次搜尋有 20 組候選方案。所有方法共用每次搜尋的前 4 組 Sobol 點與訓練需求。
+- 快速示範可跑 `python experiment.py --budget 8 --runs 1 --output /tmp/gongguan-demo`。
+- 比較任意兩組時制可跑 `python simulator.py --cycle 130 --share 0.55` 與 `python simulator.py --cycle 105 --share 0.62`。
+- 完整實驗每個搜尋方法跑四次，每次評估 20 組時制，三種搜尋方法共用前四組 Sobol 候選。平均情境 MOBO 以三個平均情境指標選代表方案，最壞情境 MOBO 與隨機搜尋都用各指標的最壞情境值選代表方案。選擇時各指標先除以 150 秒再等權加總。訓練穩健 hypervolume 以三個最壞情境指標計算，參考點為各 150 秒。
 
-## 一分鐘示範
+| 產出 | 用途 |
+| --- | --- |
+| [逐輪搜尋紀錄](results/trials.csv) | 查每組候選在各訓練情境的三項指標與當時的訓練穩健 hypervolume |
+| [三目標 Pareto 方案](results/pareto.csv) | 依每次最壞情境 MOBO 的訓練結果列出未被支配的時制，並標記代表方案 |
+| [保留情境評估](results/holdout.csv) | 查各方法選出方案後的測試結果 |
 
-先執行 `python simulator.py --cycle 130 --share 0.55` 查看固定基準，再換一組時制，例如 `python simulator.py --cycle 105 --share 0.62`，觀察各情境的等待變化。最後開啟 `results/results.png`，展示演算法如何用相同的預算找出一排取捨方案，以及推薦方案在保留情境中的表現。
+模擬包含一般尖峰、公車成團到達和橫向車流尖峰。訓練每情境使用四個亂數樣本，保留測試提高到達率並使用十二個新樣本。模型使用獨立佇列和合成需求。若要作為現地時制建議，需先校準實際交通量與現行相位，再檢查轉向衝突、相鄰路口回堵及行人安全。
 
-## 讀取產出
-
-- `results/trials.csv` 逐次記錄方案、各訓練情境指標與截至當次的穩健超體積。
-- `results/holdout.csv` 各方法只靠訓練資料選出方案後，在保留情境上的結果。
-- `results/results.png` 左圖呈現訓練穩健超體積，線為四次搜尋的中位數，陰影為最小至最大值。右圖只展示第 1 次搜尋，所有點以保留情境計分，空心圈標記在訓練情境上屬於 Pareto 前緣的候選。
-- `report/Gongguan_BO_Proposal_EN.pdf` 為兩頁英文提案。可在 `report/` 執行 `tectonic Gongguan_BO_Proposal_EN.tex` 重編。原版中文提案保留在 `report/Gongguan_BO_Proposal.pdf`。
-
-## 模擬與實驗設計
-
-- 模擬羅斯福路／基隆路概念化的單一十字路口。可調週期 100–160 秒與主幹道可分配綠燈比例 45–65%。每相位先保留 25 秒綠燈與 5 秒清道，行人可在橫向綠燈開始後進入，最後 12 秒保留清空。
-- 模擬一小時的隨機到達。車流以固定服務間隔 FIFO 排隊，公車使用獨立佇列。模擬繼續服務一小時內到達的車，避免忽略仍在排隊的車。行人模型量等待開始穿越的時間。
-- 三種訓練情境為一般尖峰、公車成團到達、橫向交通尖峰。每個情境使用四個共用亂數樣本。保留評估提高各情境的到達率，並更換為十二個亂數樣本。這些是三類已知需求的壓力測試。
-- Mean MOBO 對各情境等權平均。Robust MOBO 對兩個目標各取情境最大值，兩項最大值可來自不同情境。兩者的 acquisition 都是 qLogNEHVI。Random 均勻抽樣，按與 Robust MOBO 相同的規則選方案。
-- 以兩項訓練目標相對 150 秒參考值的等權加總，從已試過的方案中挑一個代表解。固定基準是 130 秒／55% 的合成方案。超體積參考點是兩目標各 150 秒，愈大愈好。
-- 模型未納入實地交通量、相鄰路口、轉向衝突、機車車流或行人容量。原型用於比較方法，現地應用須以交通量、現行號誌及排隊資料校準，並確認通行與安全條件。
-
-## 參考
+## 參考資料
 
 - [臺北市新建工程處：公館圓環改造](https://english.nco.gov.taipei/News_Content.aspx?n=C43859DE9907C884&s=B408C94159CBDBA6)
 - [Google Research：Project Green Light](https://sites.research.google/gr/greenlight/)
-- [Kinnunen et al. (2026)：Maximally Robust Satisficing Bayesian Optimization](https://proceedings.mlr.press/v337/kinnunen26a.html)
+- [Kinnunen 等人：Maximally Robust Satisficing Bayesian Optimization](https://proceedings.mlr.press/v337/kinnunen26a.html)
 - [BoTorch：多目標 BO 教學](https://botorch.org/docs/v0.16.1/tutorials/multi_objective_bo)

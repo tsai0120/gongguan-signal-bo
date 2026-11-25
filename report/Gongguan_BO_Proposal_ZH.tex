@@ -1,0 +1,104 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[margin=21mm]{geometry}
+\usepackage{fontspec,xeCJK}
+\IfFontExistsTF{Songti TC}{\setCJKmainfont{Songti TC}}{\setCJKmainfont{Noto Serif CJK TC}}
+\usepackage{amsmath,booktabs,graphicx}
+\usepackage[hidelinks]{hyperref}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+\renewcommand{\refname}{參考資料}
+\title{公館圓環改造後的尖峰號誌最佳化\\
+\large 以 robust multi-objective Bayesian optimization 比較三類用路人的延誤}
+\author{林采穎（LIN Tsai-Ying）\quad b13705007}
+\date{}
+\begin{document}
+\maketitle
+\vspace{-7mm}
+
+\section{問題與動機}
+
+2025 年 9 月 29 日，公館圓環改造為羅斯福路與基隆路的正交路口
+\cite{taipei}。我自己搭公車經過這個路口時，曾遇到要等好幾輪紅燈才能左轉進基隆路。
+另一方面，我步行過街時覺得等待時間還在可接受的範圍。
+這讓我想問：尖峰號誌能不能縮短公車延誤，同時維持行人的通行體驗，也避免讓一般車流承擔過多延誤？
+
+交通工程人員可以利用車流觀測、排隊資料及模擬調整現有時制。
+Google Project Green Light 使用 Google Maps 駕駛趨勢找出調整機會，供城市工程人員審查 \cite{greenlight}。
+本提案以 Bayesian optimization（BO）排序候選時制，讓有限的模擬預算優先用在值得測試的方案上。
+
+\section{設計變數、目標與評估成本}
+
+時制 $x=(C,r)$ 包含週期 $C$（100--160 秒）和主幹道可分配綠燈比例 $r$（45--65\%）。
+兩個相位各先保留 25 秒的綠燈及 5 秒的清道時間，剩餘的 $C-60$ 秒按 $r$ 分給主幹道及橫向道路。
+行人可在橫向綠燈時開始穿越主幹道，最後 12 秒保留給已進入的行人完成穿越。
+這些時間是 prototype 的假設。
+
+對各需求情境 $s$，$f(x,s)$ 含三個愈低愈好的指標，分別是公車平均排隊延誤、
+行人等待 P95（第 95 百分位），以及一般車平均排隊延誤，單位都是秒。
+Prototype 模擬一小時內的隨機到達，包括一般尖峰、公車成團到達與橫向車流尖峰。
+車輛於綠燈期間依先到先服務。公車佇列衡量整體公車延誤，實際的專用左轉相位及轉向衝突仍待建模。
+
+每套時制若要用於現地決策，需要用校準過的交通模型跨情境反覆評估，入選方案還要跨日觀察。
+Prototype 以合成需求展示如何分配這個評估預算。
+
+\section{BO 流程}
+
+每次搜尋由四組 Sobol 候選開始。每組時制在三種需求情境各跑四個共用亂數樣本。
+三個 Gaussian process（GP）學習時制與指標之間的關係，BoTorch 的 qLogNEHVI
+\cite{botorch} 從候選網格挑選預期能擴大 Pareto hypervolume 的方案。
+模擬結果回傳後更新模型，直到完成 20 組。工程人員可檢視三目標 Pareto front。
+比較實驗則把三項訓練指標各除以 150 秒後等權加總，以最小值選出一個代表方案，再做保留情境測試。
+
+\newpage
+\section{為什麼需要 robust MOBO？}
+
+延長主幹道綠燈可能有利於公車，卻增加行人等待或橫向車流延誤。Multi-objective BO（MOBO）
+保留三者之間的取捨。平均情境 MOBO 對三種情境等權平均，robust MOBO 則對各目標計算
+$g_j(x)=\max_s f_j(x,s)$。三項最大值可出現在不同情境。
+這個有限情境的作法借鑑 robust satisficing BO 對需求變動的關注。
+Kinnunen 等人 \cite{kinnunen} 研究的是如何讓方案在更大的環境變化範圍內維持達標。
+
+\section{Prototype 結果與限制}
+
+三種搜尋各重跑四次，每次共用初始候選和相同預算。對照組包含均勻隨機搜尋
+與週期 130 秒、主幹道比例 55\% 的固定合成時制。各方法選出的方案另用較高到達率
+及每情境 12 個新亂數樣本評估。
+
+\begin{center}
+\includegraphics[width=\linewidth]{../results/results.png}
+
+\small 圖 1。左圖是訓練情境的穩健 hypervolume（愈高愈好）。右圖展示第 1 次搜尋在保留情境的表現，
+候選圓點的填色代表一般車延誤，空心圈標記訓練情境的三目標 Pareto 方案。
+\end{center}
+
+\begin{center}
+\begin{tabular}{lrrr}
+\toprule
+方法 & 公車延誤（秒） & 行人 P95（秒） & 一般車延誤（秒） \\
+\midrule
+固定合成時制 & 133.7 & 79.1 & 38.5 \\
+平均情境 MOBO & 124.4 & 66.6 & 48.7 \\
+最壞情境 MOBO & 124.4 & 66.8 & 48.8 \\
+隨機搜尋 & 102.3 & 73.4 & 57.3 \\
+\bottomrule
+\end{tabular}
+
+\small 表 1。各指標先取最壞保留情境，再對四次搜尋取中位數。三欄皆愈低愈好。
+\end{center}
+
+隨機搜尋的公車延誤最低，兩種 MOBO 的行人等待和一般車延誤都比隨機搜尋低。最壞情境 MOBO 的訓練 hypervolume 中位數比隨機搜尋高約 12\%。固定合成時制的一般車延誤仍最低。兩種 MOBO 的保留情境結果相近。
+Prototype 使用合成需求及獨立車道佇列。若要用於公館現地，需先校準流量與實際相位，
+再檢查左轉衝突、相鄰路口回堵及行人清道需求。
+
+\begin{thebibliography}{9}\small
+\bibitem{taipei} 臺北市新建工程處。
+\href{https://english.nco.gov.taipei/News_Content.aspx?n=C43859DE9907C884\&s=B408C94159CBDBA6}{公館圓環改造工程}。
+\bibitem{greenlight} Google Research。
+\href{https://sites.research.google/gr/greenlight/}{Project Green Light}。
+\bibitem{botorch} BoTorch。
+\href{https://botorch.org/docs/v0.16.1/tutorials/multi_objective_bo}{Multi-objective Bayesian optimization tutorial}。
+\bibitem{kinnunen} Kinnunen, S., Mikkola, P., Niskanen, A., and Klami, A.
+\href{https://proceedings.mlr.press/v337/kinnunen26a.html}{Maximally Robust Satisficing Bayesian Optimization}. UAI, 2026.
+\end{thebibliography}
+
+\end{document}

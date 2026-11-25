@@ -1,12 +1,14 @@
 \documentclass[10pt,a4paper]{article}
 \usepackage[margin=22mm]{geometry}
 \usepackage{amsmath,booktabs,graphicx}
+\usepackage{fontspec,xeCJK}
+\IfFontExistsTF{Songti TC}{\setCJKmainfont{Songti TC}}{\setCJKmainfont{Noto Serif CJK TC}}
 \usepackage[hidelinks]{hyperref}
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{4pt}
 \title{Robust Multi-Objective Bayesian Optimization\\
 for Signal Timing at Taipei's Gongguan Intersection}
-\author{}
+\author{林采穎 (LIN Tsai-Ying) \quad b13705007}
 \date{}
 \begin{document}
 \maketitle
@@ -40,14 +42,14 @@ according to $r$. Pedestrians crossing the main axis may start during
 the cross-axis green, except during its final 12 seconds, which are
 reserved for clearance. These values define the synthetic design space.
 
-For a demand scenario $s$, the simulator estimates two quantities,
-both in seconds and both to be minimized:
+For a demand scenario $s$, the simulator estimates three quantities,
+all in seconds and all to be minimized:
 \[
 f(x,s) = \bigl(\text{mean bus queueing delay},\;
-                 \text{95th-percentile pedestrian wait}\bigr).
+                 \text{pedestrian P95 wait},\; \text{mean general-traffic delay}\bigr).
 \]
-It also records mean delay for general vehicles, which may absorb some
-of the cost of a timing change. The prototype generates one hour of
+The third objective accounts for traffic that may absorb some of the cost
+of a signal change. The prototype generates one hour of
 random arrivals for typical peak demand, clustered bus arrivals, and
 cross-axis peak demand. Vehicles are served in first-in, first-out
 order during green phases. The bus queue is an aggregate proxy for bus
@@ -62,13 +64,13 @@ possible to demonstrate how BO allocates that evaluation budget.
 \section{Bayesian optimization workflow}
 
 Each search starts with four Sobol plans. A candidate is scored on
-four common arrival samples per scenario. Two Gaussian-process
+four common arrival samples per scenario. Three Gaussian-process
 surrogates model the observed objectives. BoTorch's qLogNEHVI
 \cite{botorch} selects the next plan from a discrete grid by estimated
-improvement to the Pareto hypervolume. The simulator returns both
+improvement to the Pareto hypervolume. The simulator returns all three
 scores, the models are updated, and the search stops after 20 plans.
 Engineers can inspect the Pareto set. For the benchmark, a fixed
-equal-weight rule selects one of the evaluated plans for holdout testing.
+equal-weight sum of the three scores normalized by 150 seconds selects one of the evaluated plans for holdout testing.
 
 \newpage
 \section{Why optimize across demand scenarios?}
@@ -78,7 +80,7 @@ pedestrian crossing opportunities. Multi-objective BO keeps those
 trade-offs visible. Average-scenario MOBO assigns equal weight to all
 three scenarios. The robust version minimizes
 $g_j(x)=\max_{s} f_j(x,s)$ for each objective $j$. A quiet scenario
-therefore cannot offset a poor result in another scenario. The two
+therefore cannot offset a poor result in another scenario. The three
 maxima may occur in different scenarios. This finite-scenario
 formulation draws on the motivation of robust satisficing BO
 \cite{kinnunen}, which studies designs that meet a performance threshold
@@ -90,13 +92,14 @@ Each search method was run four times with shared initial plans and
 equal evaluation budgets. The benchmark included uniform random search
 after initialization and a fixed synthetic plan of 130 seconds and a
 55\% main-axis share. Each selected plan was tested on higher arrival
-rates and 12 new random arrival samples per scenario.
+rates and 12 new random arrival samples per scenario. Random search and worst-scenario MOBO
+use the same rule to select a representative plan.
 
 \begin{center}
 \includegraphics[width=\linewidth]{../results/results.png}
 
 \small Figure 1. Training hypervolume (left, higher is better) and
-held-out scores for the first run (right, lower is better).
+held-out scores for the first run (right). Candidate dot colors show general-traffic delay.
 Hollow markers identify plans on the training Pareto front.
 \end{center}
 
@@ -106,9 +109,9 @@ Hollow markers identify plans on the training Pareto front.
 Method & Bus mean (s) & Walk P95 (s) & General traffic mean (s) \\
 \midrule
 Fixed synthetic plan & 133.7 & 79.1 & 38.5 \\
-Average-scenario MOBO & 124.4 & 66.5 & 48.7 \\
-Worst-scenario MOBO & 112.7 & 70.4 & 72.5 \\
-Random search & 99.8 & 73.4 & 60.9 \\
+Average-scenario MOBO & 124.4 & 66.6 & 48.7 \\
+Worst-scenario MOBO & 124.4 & 66.8 & 48.8 \\
+Random search & 102.3 & 73.4 & 57.3 \\
 \bottomrule
 \end{tabular}
 
@@ -116,11 +119,8 @@ Random search & 99.8 & 73.4 & 60.9 \\
 held-out scenario. Lower values are better.
 \end{center}
 
-Compared with the fixed plan, worst-scenario MOBO reduced bus delay by
-20.9 seconds and pedestrian P95 wait by 8.6 seconds, while increasing
-general-traffic delay by 34.0 seconds. Random search found plans with
-lower bus delay and higher pedestrian waits. Both MOBO methods attained
-higher median training hypervolume than random search. The simulator
+Random search had the lowest median bus delay, while both MOBO methods achieved shorter pedestrian waits and lower general-traffic delay. Worst-scenario MOBO achieved about 12\% more median training hypervolume than random search. The fixed plan still had the lowest general-traffic delay. The two MOBO methods produced similar holdout results.
+The simulator
 uses synthetic demand and independent queues, so applying this approach
 in Gongguan would require observed demand, actual phase timings, and
 checks for turning conflicts, spillback, and pedestrian clearance.
