@@ -1,0 +1,139 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[margin=22mm]{geometry}
+\usepackage{amsmath,booktabs,graphicx}
+\usepackage[hidelinks]{hyperref}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\title{Robust Multi-Objective Bayesian Optimization\\
+for Signal Timing at Taipei's Gongguan Intersection}
+\author{}
+\date{}
+\begin{document}
+\maketitle
+\vspace{-8mm}
+
+\section{Problem and motivation}
+
+On September 29, 2025, Taipei reopened the former Gongguan Roundabout
+as a conventional intersection at Roosevelt Road and Keelung Road
+\cite{taipei}. On my own trips through the intersection, I noticed that
+my bus sometimes had to wait through several red lights before turning left
+onto Keelung Road. When I crossed on foot, the wait felt acceptable. This
+personal observation motivates a practical question: can the city reduce
+bus delay during peak periods while keeping pedestrian waits acceptable?
+
+Traffic engineers are the intended users. They can use traffic counts,
+queue observations, and simulation to decide which timing changes to
+test. Google's Project Green Light illustrates this workflow: it uses
+Google Maps driving trends to identify signal-timing changes for city
+engineers to review \cite{greenlight}. Bayesian optimization (BO) can
+prioritize candidate plans when evaluating every combination would take
+too much simulation or field testing.
+
+\section{Design variables, objectives, and evaluation cost}
+
+A timing plan is $x=(C,r)$, where the cycle length $C$ ranges from 100 to
+160 seconds and the main-axis share $r$ ranges from 0.45 to 0.65. Each of
+the two phases reserves 25 seconds of green and 5 seconds of clearance.
+The remaining $C-60$ seconds are split between the main and cross axes
+according to $r$. Pedestrians crossing the main axis may start during
+the cross-axis green, except during its final 12 seconds, which are
+reserved for clearance. These values define the synthetic design space.
+
+For a demand scenario $s$, the simulator estimates two quantities,
+both in seconds and both to be minimized:
+\[
+f(x,s) = \bigl(\text{mean bus queueing delay},\;
+                 \text{95th-percentile pedestrian wait}\bigr).
+\]
+It also records mean delay for general vehicles, which may absorb some
+of the cost of a timing change. The prototype generates one hour of
+random arrivals for typical peak demand, clustered bus arrivals, and
+cross-axis peak demand. Vehicles are served in first-in, first-out
+order during green phases. The bus queue is an aggregate proxy for bus
+delay. A dedicated left-turn phase and turning conflicts are outside
+this model.
+
+In a field study, each candidate would require repeated runs of a
+calibrated traffic model across demand conditions and, for finalists,
+observations over multiple days. The lightweight prototype makes it
+possible to demonstrate how BO allocates that evaluation budget.
+
+\section{Bayesian optimization workflow}
+
+Each search starts with four Sobol plans. A candidate is scored on
+four common arrival samples per scenario. Two Gaussian-process
+surrogates model the observed objectives. BoTorch's qLogNEHVI
+\cite{botorch} selects the next plan from a discrete grid by estimated
+improvement to the Pareto hypervolume. The simulator returns both
+scores, the models are updated, and the search stops after 20 plans.
+Engineers can inspect the Pareto set. For the benchmark, a fixed
+equal-weight rule selects one of the evaluated plans for holdout testing.
+
+\newpage
+\section{Why optimize across demand scenarios?}
+
+Increasing main-axis green time can serve more buses while reducing
+pedestrian crossing opportunities. Multi-objective BO keeps those
+trade-offs visible. Average-scenario MOBO assigns equal weight to all
+three scenarios. The robust version minimizes
+$g_j(x)=\max_{s} f_j(x,s)$ for each objective $j$. A quiet scenario
+therefore cannot offset a poor result in another scenario. The two
+maxima may occur in different scenarios. This finite-scenario
+formulation draws on the motivation of robust satisficing BO
+\cite{kinnunen}, which studies designs that meet a performance threshold
+over a wider range of conditions.
+
+\section{Prototype results and limitations}
+
+Each search method was run four times with shared initial plans and
+equal evaluation budgets. The benchmark included uniform random search
+after initialization and a fixed synthetic plan of 130 seconds and a
+55\% main-axis share. Each selected plan was tested on higher arrival
+rates and 12 new random arrival samples per scenario.
+
+\begin{center}
+\includegraphics[width=\linewidth]{../results/results.png}
+
+\small Figure 1. Training hypervolume (left, higher is better) and
+held-out scores for the first run (right, lower is better).
+Hollow markers identify plans on the training Pareto front.
+\end{center}
+
+\begin{center}
+\begin{tabular}{lrrr}
+\toprule
+Method & Bus mean (s) & Walk P95 (s) & General traffic mean (s) \\
+\midrule
+Fixed synthetic plan & 133.7 & 79.1 & 38.5 \\
+Average-scenario MOBO & 124.4 & 66.5 & 48.7 \\
+Worst-scenario MOBO & 112.7 & 70.4 & 72.5 \\
+Random search & 99.8 & 73.4 & 60.9 \\
+\bottomrule
+\end{tabular}
+
+\small Table 1. Median across four runs of each metric's worst
+held-out scenario. Lower values are better.
+\end{center}
+
+Compared with the fixed plan, worst-scenario MOBO reduced bus delay by
+20.9 seconds and pedestrian P95 wait by 8.6 seconds, while increasing
+general-traffic delay by 34.0 seconds. Random search found plans with
+lower bus delay and higher pedestrian waits. Both MOBO methods attained
+higher median training hypervolume than random search. The simulator
+uses synthetic demand and independent queues, so applying this approach
+in Gongguan would require observed demand, actual phase timings, and
+checks for turning conflicts, spillback, and pedestrian clearance.
+
+\begin{thebibliography}{9}\small
+\bibitem{taipei} Taipei City New Construction Office.
+\href{https://english.nco.gov.taipei/News_Content.aspx?n=C43859DE9907C884\&s=B408C94159CBDBA6}{Gongguan Roundabout improvement project}.
+\bibitem{greenlight} Google Research.
+\href{https://sites.research.google/gr/greenlight/}{Project Green Light}.
+\bibitem{botorch} BoTorch.
+\href{https://botorch.org/docs/v0.16.1/tutorials/multi_objective_bo}{Multi-objective Bayesian optimization tutorial}.
+\bibitem{kinnunen} Kinnunen, S., Mikkola, P., Niskanen, A., and Klami, A.
+\href{https://proceedings.mlr.press/v337/kinnunen26a.html}{Maximally Robust Satisficing Bayesian Optimization}. UAI, 2026.
+\end{thebibliography}
+
+\end{document}
