@@ -1,18 +1,18 @@
 \documentclass[10pt,a4paper]{article}
-\usepackage[margin=22mm]{geometry}
+\usepackage[left=20mm,right=20mm,top=15mm,bottom=15mm]{geometry}
 \usepackage{amsmath,booktabs,graphicx}
 \usepackage{fontspec,xeCJK}
 \IfFontExistsTF{Songti TC}{\setCJKmainfont{Songti TC}}{\setCJKmainfont{Noto Serif CJK TC}}
 \usepackage[hidelinks]{hyperref}
 \setlength{\parindent}{0pt}
-\setlength{\parskip}{4pt}
+\setlength{\parskip}{3pt}
 \title{Robust Multi-Objective Bayesian Optimization\\
 for Signal Timing at Taipei's Gongguan Intersection}
 \author{林采穎 (LIN Tsai-Ying) \quad b13705007}
 \date{}
 \begin{document}
 \maketitle
-\vspace{-8mm}
+\vspace{-12mm}
 
 \section{Problem and motivation}
 
@@ -24,13 +24,15 @@ onto Keelung Road. When I crossed on foot, the wait felt acceptable. This
 personal observation motivates a practical question: can the city reduce
 bus delay during peak periods while keeping pedestrian waits acceptable?
 
-Traffic engineers are the intended users. They can use traffic counts,
-queue observations, and simulation to decide which timing changes to
-test. Google's Project Green Light illustrates this workflow: it uses
-Google Maps driving trends to identify signal-timing changes for city
-engineers to review \cite{greenlight}. Bayesian optimization (BO) can
-prioritize candidate plans when evaluating every combination would take
-too much simulation or field testing.
+Traffic engineers are the intended users. They can start from an existing
+timing plan, use traffic counts and queues to adjust green splits by
+engineering judgment, and check changes in simulation or in the field.
+Each additional trial takes time, and a change that helps under one demand
+pattern may worsen delays under another. Google's Project Green Light
+illustrates how Google Maps driving trends can support recommendations
+for city engineers to review \cite{greenlight}. Bayesian optimization (BO)
+uses earlier results and their uncertainty to choose which timing plans to
+test, balancing exploration with refinement under a fixed budget.
 
 \section{Design variables, objectives, and evaluation cost}
 
@@ -40,7 +42,8 @@ the two phases reserves 25 seconds of green and 5 seconds of clearance.
 The remaining $C-60$ seconds are split between the main and cross axes
 according to $r$. Pedestrians crossing the main axis may start during
 the cross-axis green, except during its final 12 seconds, which are
-reserved for clearance. These values define the synthetic design space.
+reserved for clearance. These values define the synthetic design space. For example, $C=130$ s and
+$r=55\%$ give the main and cross axes 63.5 s and 56.5 s of green.
 
 For a demand scenario $s$, the simulator estimates three quantities,
 all in seconds and all to be minimized:
@@ -64,24 +67,50 @@ possible to demonstrate how BO allocates that evaluation budget.
 \section{Bayesian optimization workflow}
 
 Each search starts with four Sobol plans. A candidate is scored on
-four common arrival samples per scenario. Three Gaussian-process
+four shared arrival samples per scenario. The simulator averages each
+metric across those samples. Three Gaussian-process
 surrogates model the observed objectives. BoTorch's qLogNEHVI
 \cite{botorch} selects the next plan from a discrete grid by estimated
 improvement to the Pareto hypervolume. The simulator returns all three
 scores, the models are updated, and the search stops after 20 plans.
-Engineers can inspect the Pareto set. For the benchmark, a fixed
-equal-weight sum of the three scores normalized by 150 seconds selects one of the evaluated plans for holdout testing.
+Engineers set the scenarios and budget, then inspect the Pareto set and
+shortlist plans within acceptable pedestrian and general-traffic delays.
+For reproducible comparison, the benchmark selects the plan with the
+smallest equal-weight sum of the three training scores scaled by 150 s,
+then evaluates it on held-out demand.
+
+\begin{center}
+\setlength{\unitlength}{1pt}
+\begin{picture}(430,58)
+\put(0,27){\framebox(97,28){\footnotesize\shortstack{Set scenarios\\and budget}}}
+\put(111,27){\framebox(97,28){\footnotesize\shortstack{Propose a plan\\Sobol or qLogNEHVI}}}
+\put(222,27){\framebox(97,28){\footnotesize\shortstack{Simulate and score\\all three objectives}}}
+\put(333,27){\framebox(97,28){\footnotesize\shortstack{Record results and\\update three GPs}}}
+\put(97,41){\vector(1,0){14}}
+\put(208,41){\vector(1,0){14}}
+\put(319,41){\vector(1,0){14}}
+\put(382,27){\line(0,-1){11}}
+\put(382,16){\line(-1,0){222}}
+\put(160,16){\vector(0,1){11}}
+\put(160,3){\makebox(222,10){\scriptsize Fewer than 20 plans}}
+\end{picture}
+
+\small At 20 plans, show the Pareto front, choose a representative plan, and test it on held-out demand.
+\end{center}
 
 \newpage
 \section{Why optimize across demand scenarios?}
 
 Increasing main-axis green time can serve more buses while reducing
 pedestrian crossing opportunities. Multi-objective BO keeps those
-trade-offs visible. Average-scenario MOBO assigns equal weight to all
+trade-offs visible without choosing policy weights before seeing the alternatives.
+Average-scenario MOBO assigns equal weight to all
 three scenarios. The robust version minimizes
 $g_j(x)=\max_{s} f_j(x,s)$ for each objective $j$. A quiet scenario
 therefore cannot offset a poor result in another scenario. The three
-maxima may occur in different scenarios. This finite-scenario
+maxima may occur in different scenarios. A bus platoon can leave a queue
+that persists over multiple cycles. Averages can mask that delay, so the
+worst-scenario score makes the surge matter when choosing plans. This finite-scenario
 formulation draws on the motivation of robust satisficing BO
 \cite{kinnunen}, which studies designs that meet a performance threshold
 over a wider range of conditions.
