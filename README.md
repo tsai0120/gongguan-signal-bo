@@ -36,7 +36,7 @@ python -m pip install -r requirements.txt
 python experiment.py
 ```
 
-- 快速示範可跑 `python experiment.py --budget 8 --runs 1 --output /tmp/gongguan-demo`。
+- 快速示範可跑 `python experiment.py --budget 8 --runs 1 --output /tmp/gongguan-demo`。完成後開啟輸出資料夾的 `results.png`：左圖看搜尋如何累積較好的取捨，右圖看各方案在保留情境的公車、行人與一般車延誤。再到同資料夾的 `pareto.csv` 找 `recommended=True`，即可看到被選去做保留情境測試的時制。
 - 比較任意兩組時制可跑 `python simulator.py --cycle 130 --share 0.55` 與 `python simulator.py --cycle 105 --share 0.62`。
 - 完整實驗每個搜尋方法跑四次，每次評估 20 組時制，三種搜尋方法共用前四組 Sobol 候選。平均情境 MOBO 以三個平均情境指標選代表方案，最壞情境 MOBO 與隨機搜尋都用各指標的最壞情境值選代表方案。選擇時各指標先除以 150 秒再等權加總。訓練穩健 hypervolume 以三個最壞情境指標計算，參考點為各 150 秒。
 
