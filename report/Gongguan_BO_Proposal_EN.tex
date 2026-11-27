@@ -16,23 +16,9 @@ for Signal Timing at Taipei's Gongguan Intersection}
 
 \section{Problem and motivation}
 
-On September 29, 2025, Taipei reopened the former Gongguan Roundabout
-as a conventional intersection at Roosevelt Road and Keelung Road
-\cite{taipei}. On my own trips through the intersection, I noticed that
-my bus sometimes had to wait through several red lights before turning left
-onto Keelung Road. When I crossed on foot, the wait felt acceptable. This
-personal observation motivates a practical question: can the city reduce
-bus delay during peak periods while keeping pedestrian waits acceptable?
+Taipei reopened the former Gongguan Roundabout as a conventional intersection on September 29, 2025 \cite{taipei}. When I ride through Gongguan, my bus sometimes waits through several signal cycles. On foot, the wait has felt acceptable. Can peak-period timing reduce bus delay while keeping pedestrian and general-traffic delays acceptable, even when demand shifts?
 
-Traffic engineers are the intended users. They can start from an existing
-timing plan, use traffic counts and queues to adjust green splits by
-engineering judgment, and check changes in simulation or in the field.
-Each additional trial takes time, and a change that helps under one demand
-pattern may worsen delays under another. Google's Project Green Light
-illustrates how Google Maps driving trends can support recommendations
-for city engineers to review \cite{greenlight}. Bayesian optimization (BO)
-uses earlier results and their uncertainty to choose which timing plans to
-test, balancing exploration with refinement under a fixed budget.
+Traffic engineers typically start from an existing plan, adjust green splits using traffic counts and queue observations, and check the changes in simulation or on site. Google's Project Green Light uses Google Maps driving trends to recommend adjustments for engineers to review \cite{greenlight}. BO uses previous results and their uncertainty to prioritize which plans to simulate. A grid with 10 settings per variable requires 100 plans. The prototype evaluates 20, an 80\% smaller budget, with no assumption that the searches find equivalent solutions.
 
 \section{Design variables, objectives, and evaluation cost}
 
@@ -51,33 +37,15 @@ all in seconds and all to be minimized:
 f(x,s) = \bigl(\text{mean bus queueing delay},\;
                  \text{pedestrian P95 wait},\; \text{mean general-traffic delay}\bigr).
 \]
-The third objective accounts for traffic that may absorb some of the cost
-of a signal change. The prototype generates one hour of
-random arrivals for typical peak demand, clustered bus arrivals, and
-cross-axis peak demand. Vehicles are served in first-in, first-out
-order during green phases. The bus queue is an aggregate proxy for bus
-delay. A dedicated left-turn phase and turning conflicts are outside
-this model.
+The prototype uses FIFO vehicle queues and simulates one hour of random arrivals under typical peak demand, clustered bus arrivals, and cross-axis peak demand. The two variables keep the demonstration small. Field deployment could also tune individual phase lengths and offsets between neighboring signals.
 
-In a field study, each candidate would require repeated runs of a
-calibrated traffic model across demand conditions and, for finalists,
-observations over multiple days. The lightweight prototype makes it
-possible to demonstrate how BO allocates that evaluation budget.
+Each candidate needs $3\times4=12$ simulation runs. The 20-plan search requires 240 runs, compared with 1,200 for the example grid under identical replication. Field evaluation would use a calibrated traffic model and validate shortlisted plans across multiple days.
 
 \section{Bayesian optimization workflow}
 
-Each search starts with four Sobol plans. A candidate is scored on
-four shared arrival samples per scenario. The simulator averages each
-metric across those samples. Three Gaussian-process
-surrogates model the observed objectives. BoTorch's qLogNEHVI
-\cite{botorch} selects the next plan from a discrete grid by estimated
-improvement to the Pareto hypervolume. The simulator returns all three
-scores, the models are updated, and the search stops after 20 plans.
-Engineers set the scenarios and budget, then inspect the Pareto set and
-shortlist plans within acceptable pedestrian and general-traffic delays.
-For reproducible comparison, the benchmark selects the plan with the
-smallest equal-weight sum of the three training scores scaled by 150 s,
-then evaluates it on held-out demand.
+Engineers set the scenarios and budget. The system tests four Sobol plans, then uses three Gaussian-process (GP) models and BoTorch's qLogNEHVI \cite{botorch} to choose candidates with promising expected Pareto hypervolume gains. Simulated delays vary with arrivals. Each scenario metric averages four shared random samples to reduce noise and enable fairer comparisons. The system updates the GPs with each plan's scores.
+
+The prototype stops at 20 plans. In practice, engineers could also stop after hypervolume gains stay below a threshold. On the Pareto front they could screen for pedestrian P95 $\leq70$ s, then choose the lowest bus delay among plans meeting that illustrative limit. The benchmark instead uses a fixed equal-weight sum of the three training scores scaled by 150 s and tests the selected plan on held-out demand.
 
 \begin{center}
 \setlength{\unitlength}{1pt}
@@ -101,19 +69,9 @@ then evaluates it on held-out demand.
 \newpage
 \section{Why optimize across demand scenarios?}
 
-Increasing main-axis green time can serve more buses while reducing
-pedestrian crossing opportunities. Multi-objective BO keeps those
-trade-offs visible without choosing policy weights before seeing the alternatives.
-Average-scenario MOBO assigns equal weight to all
-three scenarios. The robust version minimizes
-$g_j(x)=\max_{s} f_j(x,s)$ for each objective $j$. A quiet scenario
-therefore cannot offset a poor result in another scenario. The three
-maxima may occur in different scenarios. A bus platoon can leave a queue
-that persists over multiple cycles. Averages can mask that delay, so the
-worst-scenario score makes the surge matter when choosing plans. This finite-scenario
-formulation draws on the motivation of robust satisficing BO
-\cite{kinnunen}, which studies designs that meet a performance threshold
-over a wider range of conditions.
+More main-axis green can help buses while increasing waits for pedestrians or cross-axis traffic. MOBO shows those trade-offs before engineers choose priorities. The objectives are measured directly, so pairwise preference feedback adds little here. Transfer BO could warm-start future searches at related intersections.
+
+A bus platoon can leave a queue across cycles. To keep quieter scenarios from masking such delays, the prototype uses a finite-scenario maximum, $g_j(x)=\max_s f_j(x,s)$, for each objective. Kinnunen et al. \cite{kinnunen} motivate this focus on demand uncertainty with a distinct robust satisficing method that seeks to meet a threshold across a wider range of conditions.
 
 \section{Prototype results and limitations}
 
@@ -125,7 +83,7 @@ rates and 12 new random arrival samples per scenario. Random search and worst-sc
 use the same rule to select a representative plan.
 
 \begin{center}
-\includegraphics[width=\linewidth]{../results/results.png}
+\includegraphics[width=.92\linewidth]{../results/results.png}
 
 \small Figure 1. Training hypervolume (left, higher is better) and
 held-out scores for the first run (right). Candidate dot colors show general-traffic delay.
@@ -148,11 +106,9 @@ Random search & 102.3 & 73.4 & 57.3 \\
 held-out scenario. Lower values are better.
 \end{center}
 
-Random search had the lowest median bus delay, while both MOBO methods achieved shorter pedestrian waits and lower general-traffic delay. Worst-scenario MOBO achieved about 12\% more median training hypervolume than random search. The fixed plan still had the lowest general-traffic delay. The two MOBO methods produced similar holdout results.
-The simulator
-uses synthetic demand and independent queues, so applying this approach
-in Gongguan would require observed demand, actual phase timings, and
-checks for turning conflicts, spillback, and pedestrian clearance.
+Random search had the lowest median bus delay. Both MOBO methods had lower pedestrian and general-traffic delays than random search, and worst-scenario MOBO had about 12\% higher median training hypervolume. The fixed plan had the lowest general-traffic delay.
+
+The two MOBO methods had similar holdout results. Across 182 distinct evaluated plans, mean and worst-scenario rankings for each training objective had Spearman $\rho$ of 0.99 (bus), 1.00 (pedestrian, rounded), and 0.92 (general traffic). This agreement may help explain the similarity in this benchmark. Field use requires measured demand, actual phase timings, and checks for spillback and pedestrian clearance.
 
 \begin{thebibliography}{9}\small
 \bibitem{taipei} Taipei City New Construction Office.
