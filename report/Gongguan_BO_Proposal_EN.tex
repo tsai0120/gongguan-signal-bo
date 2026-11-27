@@ -8,7 +8,7 @@
 \setlength{\parskip}{3pt}
 \title{Robust Multi-Objective Bayesian Optimization\\
 for Signal Timing at Taipei's Gongguan Intersection}
-\author{林采穎 (LIN Tsai-Ying) \quad b13705007}
+\author{林采穎 (Lin Tsai-Ying) \quad b13705007}
 \date{}
 \begin{document}
 \maketitle
@@ -18,7 +18,7 @@ for Signal Timing at Taipei's Gongguan Intersection}
 
 Taipei reopened the former Gongguan Roundabout as a conventional intersection on September 29, 2025 \cite{taipei}. When I ride through Gongguan, my bus sometimes waits through several signal cycles. On foot, the wait has felt acceptable. Can peak-period timing reduce bus delay while keeping pedestrian and general-traffic delays acceptable, even when demand shifts?
 
-Traffic engineers typically start from an existing plan, adjust green splits using traffic counts and queue observations, and check the changes in simulation or on site. Google's Project Green Light uses Google Maps driving trends to recommend adjustments for engineers to review \cite{greenlight}. BO uses previous results and their uncertainty to prioritize which plans to simulate. A grid with 10 settings per variable requires 100 plans. The prototype evaluates 20, an 80\% smaller budget, with no assumption that the searches find equivalent solutions.
+Traffic engineers typically start from an existing plan, adjust green splits using traffic counts and queue observations, and check the changes in simulation or on site. Google's Project Green Light uses Google Maps driving trends to recommend adjustments for engineers to review \cite{greenlight}. A timing change that helps on a typical day can worsen queues during a surge. BO complements manual tuning by using all three measured objectives and their uncertainty to prioritize the next trial. A grid with 10 settings per variable requires 100 plans. The prototype evaluates 20, an 80\% smaller budget, with no assumption that the searches find equivalent solutions.
 
 \section{Design variables, objectives, and evaluation cost}
 
@@ -39,7 +39,7 @@ f(x,s) = \bigl(\text{mean bus queueing delay},\;
 \]
 The prototype uses FIFO vehicle queues and simulates one hour of random arrivals under typical peak demand, clustered bus arrivals, and cross-axis peak demand. The two variables keep the demonstration small. Field deployment could also tune individual phase lengths and offsets between neighboring signals.
 
-Each candidate needs $3\times4=12$ simulation runs. The 20-plan search requires 240 runs, compared with 1,200 for the example grid under identical replication. Field evaluation would use a calibrated traffic model and validate shortlisted plans across multiple days.
+Each candidate needs $3\times4=12$ simulation runs. The 20-plan search requires 240 runs, compared with 1,200 for the example grid under identical replication. At an illustrative 2 minutes per calibrated run, a single candidate would take 24 minutes of serial simulation. Field validation spans multiple comparable peak periods. The prototype substitutes fast synthetic simulation for these more costly evaluations.
 
 \section{Bayesian optimization workflow}
 
@@ -108,7 +108,7 @@ held-out scenario. Lower values are better.
 
 Random search had the lowest median bus delay. Both MOBO methods had lower pedestrian and general-traffic delays than random search, and worst-scenario MOBO had about 12\% higher median training hypervolume. The fixed plan had the lowest general-traffic delay.
 
-The two MOBO methods had similar holdout results. Across 182 distinct evaluated plans, mean and worst-scenario rankings for each training objective had Spearman $\rho$ of 0.99 (bus), 1.00 (pedestrian, rounded), and 0.92 (general traffic). This agreement may help explain the similarity in this benchmark. Field use requires measured demand, actual phase timings, and checks for spillback and pedestrian clearance.
+The two MOBO methods had similar holdout results. Across 182 distinct timing plans pooled from all searches in \texttt{trials.csv}, mean and worst-scenario rankings for each training objective had Spearman $\rho$ of 0.99 (bus), 1.00 (pedestrian, rounded), and 0.92 (general traffic). This agreement may explain the similar results. More extreme demand could separate the rankings, a hypothesis for future testing. Field use requires measured demand, actual phase timings, and checks for spillback and pedestrian clearance.
 
 \begin{thebibliography}{9}\small
 \bibitem{taipei} Taipei City New Construction Office.
